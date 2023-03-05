@@ -1,0 +1,135 @@
+﻿@page "/loans"
+
+@inject IDbContextFactory<ApplicationDbContext> contextFactory
+@inject LoginState loginState;
+@inject ILogger<Loans> logger;
+
+<div class="container">
+    <h3>Loans</h3>
+
+    @if (loginState.IsLoggedIn)
+    {
+        <RadzenDataGrid @ref="loansGrid" Data="@loans">
+            <Columns>
+                <RadzenDataGridColumn TItem="Loan" Context="loan" Filterable="false" Sortable="false" Title="Title">
+                    <Template Context="loan">
+                        @GetTitle(loan)
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Loan" Property="StartDate" Title="Start Date" />
+                <RadzenDataGridColumn TItem="Loan" Context="loan" Title="Days Remaining">
+                    <Template Context="loan">
+                        @DaysRemaining(loan.StartDate, loan.LoanDuration)
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Loan" Property="LoanDuration" Title="Loan Duration(Days)" />
+                <RadzenDataGridColumn TItem="Loan" Context="loan" Filterable="false" Sortable="false">
+                    <Template Context="loan">
+                        <RadzenButton Click=@(args => Return(loan)) Text="Return" ButtonStyle="ButtonStyle.Danger" />
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    }
+</div>
+
+
+
+@code {
+    private IList<Loan>? loans { get; set; }
+    RadzenDataGrid<Loan>? loansGrid;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        if (loginState.IsLoggedIn)
+        {
+            using var ctx = contextFactory.CreateDbContext();
+
+            try
+            {
+                loans = await ctx.Loans.Where(x => x.Member!.LibraryCardNo == loginState.LibraryUser && x.Active == true).ToListAsync();
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, e.StackTrace);
+            }
+        }
+
+    }
+
+    protected async Task Return(Loan loan)
+    {
+        loan.ReturnDate = DateTime.Now;
+        loan.Active = false;
+
+        using var ctx = contextFactory.CreateDbContext();
+        ctx.Update(loan);
+
+        await ctx.SaveChangesAsync();
+        loans!.Remove(loan);
+
+        await loansGrid!.Reload();
+
+        try
+        {
+            Copy? copy = await ctx.Copies.Where(x => x.Id == loan.CopyId).FirstOrDefaultAsync();
+
+            if (copy != null)
+            {
+                Hold? firstHold = await ctx.Holds.Where(x => x.BookId == copy.BookID).OrderBy(x => x.Date).FirstOrDefaultAsync();
+
+                if (firstHold != null)
+                {
+                    logger.LogInformation($"Book now available for library user {firstHold.MemberLibraryCardNo}");
+                }
+            }
+
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+    }
+
+    protected string GetTitle(Loan loan)
+    {
+        string title = string.Empty;
+        using var ctx = contextFactory.CreateDbContext();
+        Copy? copy = null;
+
+        try
+        {
+            copy = ctx.Copies.Where(x => x.Id == loan.CopyId).Include(x => x.Book).FirstOrDefault();
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+
+        if (copy != null)
+        {
+            title = copy.Book!.Title!;
+        }
+
+        return title;
+
+    }
+
+    protected int DaysRemaining(DateTime? start, int? duration)
+    {
+        if (start.HasValue)
+        {
+            DateTime begin = start.Value;
+            DateTime today = DateTime.Today;
+            DateTime due = begin.AddDays(Convert.ToDouble(duration));
+            return (due - today).Days;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+}

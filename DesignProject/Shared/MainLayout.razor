@@ -1,0 +1,37 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject LoginState loginState;
+
+<PageTitle>DesignProject</PageTitle>
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            @if (loginState.IsLoggedIn)
+            {
+                <a href="/-1">Logout</a>
+            }
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<RadzenNotification />
+
+@code {
+    protected override void OnInitialized()
+    {
+        loginState.OnChange += StateHasChanged;
+    }
+    public void Dispose()
+    {
+        loginState.OnChange -= StateHasChanged;
+    }
+}

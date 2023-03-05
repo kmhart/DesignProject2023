@@ -1,0 +1,94 @@
+﻿@page "/holds"
+
+@inject IDbContextFactory<ApplicationDbContext> contextFactory
+@inject LoginState loginState
+@inject ILogger<Holds> logger;
+
+<div class="container">
+    <h3>Holds</h3>
+
+    @if (loginState.IsLoggedIn)
+    {
+        <RadzenDataGrid Data="@holds" @ref="holdsGrid">
+            <Columns>
+                <RadzenDataGridColumn TItem="Hold" Context="hold" Filterable="false" Sortable="false" Title="Title">
+                    <Template Context="hold">
+                        @GetTitle(hold)
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Hold" Property="Date" Title="Initiated Date" />
+                <RadzenDataGridColumn TItem="Hold" Context="loan" Filterable="false" Sortable="false">
+                    <Template Context="loan">
+                        <RadzenButton Click=@(args => Cancel(loan)) Text="Cancel" ButtonStyle="ButtonStyle.Danger" />
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    }
+</div>
+
+
+
+@code {
+    private IList<Hold>? holds { get; set; }
+    private RadzenDataGrid<Hold>? holdsGrid;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        if (loginState.IsLoggedIn)
+        {
+            using var ctx = contextFactory.CreateDbContext();
+
+            try
+            {
+                holds = await ctx.Holds.Where(x => x.Member!.LibraryCardNo == loginState.LibraryUser).ToListAsync();
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, e.StackTrace);
+            }
+        }
+
+    }
+
+    protected async Task Cancel(Hold hold)
+    {
+        using var ctx = contextFactory.CreateDbContext();
+
+        if (holds!.Contains(hold))
+        {
+            ctx.Remove<Hold>(hold);
+            await ctx.SaveChangesAsync();
+            holds.Remove(hold);
+
+            await holdsGrid!.Reload();
+        }
+    }
+
+    protected string GetTitle(Hold hold)
+    {
+        string title = string.Empty;
+        using var ctx = contextFactory.CreateDbContext();
+        Book? book = null;
+
+        try
+        {
+            book = ctx.Books.Where(x => x.Id == hold.BookId).FirstOrDefault();
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+
+        if (book != null)
+        {
+            title = book.Title!;
+        }
+
+        return title;
+
+    }
+
+}

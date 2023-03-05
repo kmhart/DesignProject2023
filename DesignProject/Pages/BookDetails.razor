@@ -1,0 +1,179 @@
+﻿@page "/bookdetails/{id:int}"
+
+@inject IDbContextFactory<ApplicationDbContext> contextFactory
+@inject NavigationManager navigationManager
+@inject LoginState loginState;
+@inject ILogger<BookDetails> logger;
+
+<div class="container">
+    <h3>Book Details</h3>
+
+    <div class="card border-light">
+        <div class="card-header">@CurrentBook!.Title</div>
+        <div class="card-body">
+            <h2 class="card-title">ISBN</h2>
+            <p class="card-text">@CurrentBook.ISBN</p>
+            <h2 class="card-title">Format</h2>
+            <p class="card-text">@CurrentBook.Format</p>
+            <h2 class="card-title">Author</h2>
+            @foreach (Author author in CurrentBook.Authors!)
+            {
+                <p class="card-text">@author.FirstName @author.LastName</p>
+            }
+            <h2 class="card-title">Publisher</h2>
+            <p class="card-text">@CurrentBook.Publisher</p>
+            <h2 class="card-title">Genre</h2>
+            @foreach (Genre genre in CurrentBook.Genres!)
+            {
+                <p class="card-text">@genre.Name</p>
+            }
+            <h2 class="card-title">Status</h2>
+            <p class="card-text">@available of @total available, @holds holds</p>
+        </div>
+        @if (loginState.IsLoggedIn)
+        {
+            @if (available > 0 && !borrowing && (holds == 0 || heldForMember))
+            {
+                <form class="m-3">
+                    <div class="row">
+                        <div class="col">
+                            <label for="select-duration">Days to borrow:</label>
+                            <select class="form-control" value="@loanDuration" @onchange="ChangeDuration" id="select-duration">
+                                <option>7</option>
+                                <option>21</option>
+                                <option>28</option>
+                            </select>
+                        </div>
+                        <div class="col align-self-center">
+                            <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Click="@(x => Borrow())">Borrow</RadzenButton>
+                        </div>
+                    </div>
+                </form>
+            }
+            else if (total > 0 && !holding && !borrowing)
+            {
+                <RadzenButton Variant="Variant.Flat" ButtonStyle="ButtonStyle.Primary" Click="@(x => Hold())">Hold</RadzenButton>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+    public Book? CurrentBook { get; set; }
+    public IList<Copy>? Copies { get; set; }
+    public int total = 0, available = 0, holds = 0, loanDuration = 7;
+    bool borrowing = false, holding = false, heldForMember = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        using var ctx = contextFactory.CreateDbContext();
+
+        try
+        {
+            CurrentBook = await ctx.Books.Where(x => x.Id == Id)
+            .Include(x => x.Authors).Include(x => x.Genres)
+            .Include(x => x.Holds).FirstOrDefaultAsync<Book>();
+
+            Copies = await ctx.Copies.Where(x => x.Book!.Id == Id)
+            .Include(x => x.Loans).ToListAsync();
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+
+        if (CurrentBook != null && Copies != null)
+        {
+            try
+            {
+                total = Copies.Count();
+                // copies that have no loans or the last loan is not active
+                available = Copies.Where(x => x.Loans!.OrderBy(x => x.StartDate).LastOrDefault() == null || 
+                x.Loans!.OrderBy(x => x.StartDate).LastOrDefault()!.Active == false).Count();
+                holds = CurrentBook.Holds!.Count();
+
+                borrowing = Copies.Any(x => x.Loans!.Any(x => x.MemberLibraryCardNo == loginState.LibraryUser && x.Active == true));
+                holding = CurrentBook.Holds!.Any(x => x.MemberLibraryCardNo == loginState.LibraryUser);
+
+                heldForMember = CurrentBook.Holds!.LastOrDefault() != null && CurrentBook.Holds!.LastOrDefault()!.MemberLibraryCardNo == loginState.LibraryUser;
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, e.StackTrace);
+            }
+        }
+    }
+
+    protected async Task Borrow()
+    {
+        Loan loan = new();
+        loan.StartDate = DateTime.Now;
+        loan.ReturnDate = null;
+        loan.LoanDuration = loanDuration;
+        loan.Active = true;
+        loan.MemberLibraryCardNo = loginState.LibraryUser;
+
+        using var ctx = contextFactory.CreateDbContext();
+
+        Copy? copy = null;
+
+        try
+        {
+            copy = await ctx.Copies.Where(x => x.BookID == CurrentBook!.Id && 
+                (x.Loans!.OrderBy(x => x.StartDate).LastOrDefault() == null || x.Loans!.OrderBy(x => x.StartDate).LastOrDefault()!.Active == false))
+                .Include(x => x.Loans).FirstOrDefaultAsync<Copy>();
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+
+        if (copy != null)
+        {
+            copy.Loans!.Add(loan);
+            ctx.Update(copy);
+            await ctx.SaveChangesAsync();
+        }
+
+        navigationManager.NavigateTo($"loans");
+    }
+
+    protected async Task Hold()
+    {
+        Hold hold = new();
+        hold.Date = DateTime.Now;
+        hold.MemberLibraryCardNo = loginState.LibraryUser;
+
+        using var ctx = contextFactory.CreateDbContext();
+
+        Book? book = null;
+
+        try
+        {
+            book = await ctx.Books.Where(x => x.Id == Id).Include(x => x.Holds).FirstOrDefaultAsync<Book>();
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+
+        if (book != null)
+        {
+            book.Holds!.Add(hold);
+            ctx.Update(book);
+            await ctx.SaveChangesAsync();
+        }
+
+        navigationManager.NavigateTo($"holds");
+
+    }
+
+    protected void ChangeDuration(ChangeEventArgs e)
+    {
+        loanDuration = Convert.ToInt32(e.Value!.ToString());
+    }
+
+}

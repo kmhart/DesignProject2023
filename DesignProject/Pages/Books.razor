@@ -1,0 +1,169 @@
+﻿@page "/books"
+
+@inject IDbContextFactory<ApplicationDbContext> contextFactory
+@inject NavigationManager navigationManager
+@inject LoginState loginState;
+@inject ILogger<Books> logger;
+
+<style>
+    .book-table th {
+        background-color: #BAD7E9 !important;
+    }
+
+    .book-table
+    {
+        padding: 0 !important;
+    }
+
+    .rz-column-title-content {
+        color: #2B3467 !important;
+        font-weight: bold !important;
+        text-transform: uppercase !important;
+    }
+
+    .rz-cell-data {
+        overflow: visible !important;
+        white-space: normal !important;
+    }
+
+    .author-table thead th, .genre-table thead th
+    {
+        display: none !important;
+    }
+
+    .author-table td, .genre-table td {
+        padding: 2px !important;
+    }
+</style>
+
+<div class="container">
+    <h3>Search Books</h3>
+
+    @if (loginState.IsLoggedIn)
+    {
+        <div class="input-group mb-3">
+            <input @bind-value="searchText1" placeholder="Search by title" class="form-control" />
+            <button class="btn btn-outline-secondary" type="button" @onclick="SearchTitle">Search Title</button>
+        </div>
+        <div class="input-group mb-3">
+            <input @bind-value="searchText2" placeholder="Search by author last name" class="form-control" />
+            <button class="btn btn-outline-secondary" type="button" @onclick="SearchAuthor">Search Author</button>
+        </div>
+        <div class="input-group mb-3">
+            <input @bind-value="searchText3" placeholder="Search by book SKU" class="form-control" />
+            <button class="btn btn-outline-secondary" type="button" @onclick="SearchSKU">Search SKU</button>
+        </div>
+
+        <RadzenDataGrid Data="@books" class="book-table" AllowColumnResize="true" SelectionMode="DataGridSelectionMode.Single" TItem="Book" RowSelect="@((x) => GoToBook(x))">
+            <Columns>
+                <RadzenDataGridColumn TItem="Book" Property="Title" Title="Title" />
+                <RadzenDataGridColumn TItem="Book" Property="Publisher" Title="Publisher" />
+                <RadzenDataGridColumn TItem="Book" Property="ISBN" Title="ISBN" />
+                <RadzenDataGridColumn TItem="Book" Property="Format" Title="Format" />
+                <RadzenDataGridColumn TItem="Book" Context="book" Title="Author" Width="20%">
+                    <Template Context="book">
+                        <RadzenDataGrid Data="@book.Authors" class="author-table">
+                            <Columns>
+                                <RadzenDataGridColumn TItem="Author" Property="FirstName" />
+                                <RadzenDataGridColumn TItem="Author" Property="LastName" />
+                            </Columns>
+                        </RadzenDataGrid>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Book" Context="book" Title="Genre">
+                    <Template Context="book">
+                        <RadzenDataGrid Data="@book.Genres" class="genre-table">
+                            <Columns>
+                                <RadzenDataGridColumn TItem="Genre" Property="Name" />
+                            </Columns>
+                        </RadzenDataGrid>
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+
+    }
+
+</div>
+
+@code {
+    private IEnumerable<Book>? books { get; set; }
+    public string searchText1 = "", searchText2 = "", searchText3 = "";
+
+    protected async Task SearchTitle()
+    {
+        using var ctx = contextFactory.CreateDbContext();
+
+        try
+        {
+            books = await ctx.Books.Where(x => x.Title!.ToLower().Contains(searchText1.ToLower()))
+            .Include(x => x.Authors)
+            .Include(x => x.Genres).ToListAsync();
+
+            logger.LogInformation($"Searching titles for term {searchText1}");
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+    }
+
+    protected async Task SearchAuthor()
+    {
+        using var ctx = contextFactory.CreateDbContext();
+
+        try
+        {
+            books = await ctx.Books.Where(x => x.Authors!.Any(x => x.LastName!.ToLower().Contains(searchText2.ToLower())))
+            .Include(x => x.Authors)
+            .Include(x => x.Genres).ToListAsync();
+
+            logger.LogInformation($"Searching authors for term {searchText2}");
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+    }
+
+    protected async Task SearchSKU()
+    {
+        using var ctx = contextFactory.CreateDbContext();
+        Copy? copy = null;
+
+        try
+        {
+            copy = await ctx.Copies.Where(x => x.SKU!.ToLower() == searchText3.ToLower()).FirstOrDefaultAsync();
+
+            logger.LogInformation($"Searching SKU {searchText3}");
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+
+        if (copy != null)
+        {
+            try
+            {
+                books = await ctx.Books.Where(x => x.Id == copy.BookID)
+                        .Include(x => x.Authors)
+                        .Include(x => x.Genres).ToListAsync();
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, e.StackTrace);
+            }
+        }
+        else
+        {
+            books = new List<Book>();
+        }
+    }
+
+    protected void GoToBook(Book book)
+    {
+        navigationManager.NavigateTo($"bookdetails/{book.Id}");
+    }
+
+}

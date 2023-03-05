@@ -1,0 +1,53 @@
+﻿@inject LoginState loginState;
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">DesignProject</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass" @onclick="ToggleNavMenu">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="oi oi-home" aria-hidden="true"></span> Home
+            </NavLink>
+            @if (loginState.IsLoggedIn)
+            {
+                <NavLink class="nav-link" href="books" Match="NavLinkMatch.All">
+                    <span class="oi oi-book" aria-hidden="true"></span> Borrow
+                </NavLink>
+                <NavLink class="nav-link" href="loans" Match="NavLinkMatch.All">
+                    <span class="oi oi-list" aria-hidden="true"></span> Loans
+                </NavLink>
+                    <NavLink class="nav-link" href="holds" Match="NavLinkMatch.All">
+                    <span class="oi oi-clock" aria-hidden="true"></span> Holds
+                </NavLink>
+            }
+        </div>
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+    protected override void OnInitialized()
+    {
+        loginState.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        loginState.OnChange -= StateHasChanged;
+    }
+}

@@ -1,0 +1,87 @@
+﻿@page "/"
+@page "/{id:int}"
+
+@inject IDbContextFactory<ApplicationDbContext> contextFactory
+@inject NotificationService notificationService
+@inject LoginState loginState;
+@inject ILogger<Home> logger;
+@inject NavigationManager navigationManager;
+
+@if (loginState.IsLoggedIn)
+{
+    <div class="container">
+        <ul class="list-group">
+            <li class="list-group-item list-group-item-action"><RadzenLink Icon="library_books" Path="books" Text="Borrow" /></li>
+            <li class="list-group-item list-group-item-action"><RadzenLink Icon="list" Path="loans" Text="Loans" /></li>
+            <li class="list-group-item list-group-item-action"><RadzenLink Icon="schedule" Path="holds" Text="Holds" /></li>
+        </ul>
+    </div>
+}
+else
+{
+    <div class="container">
+        <form @onsubmit="OnSubmit">
+            <div class="mb-3">
+                <label for="library-card" class="form-label">Enter library card:</label>
+                <input class="form-control" id="library-card" @bind-value="member" />
+            </div>
+            <RadzenButton type="submit" class="btn btn-primary mb-3">Submit</RadzenButton>
+        </form>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+    private string member = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+
+        if (Id == -1)
+        {
+            member = string.Empty;
+            loginState.SetLogin(false, member);
+            logger.LogInformation("Logged out");
+        }
+        else if (Id == 1)
+        {
+            loginState.SetLogin(true, member);
+            logger.LogInformation($"Logged in for user {member}");
+        }
+    }
+
+    protected async Task OnSubmit()
+    {
+        using var ctx = contextFactory.CreateDbContext();
+
+        bool exists = false;
+
+
+        try
+        {
+            exists = await ctx.Members.AnyAsync(x => x.LibraryCardNo == member);
+
+            if (exists)
+            {
+                navigationManager.NavigateTo("/1");
+            }
+            else
+            {
+                notificationService.Notify(new NotificationMessage
+                    {
+                        Severity = NotificationSeverity.Error,
+                        Summary = "Error",
+                        Detail = "User not found.",
+                        Duration = 4000
+                    });
+            }
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.StackTrace);
+        }
+    }
+
+}
